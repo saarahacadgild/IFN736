@@ -1,0 +1,13 @@
+{
+  "contractVersion": "1.0",
+  "moduleCode": "RAL",
+  "version": "1.0.0",
+  "apiAssembly": "ReadAlert.Api.dll",
+  "healthPath": "/api/ral/v01/health",
+  "readinessPath": "/api/ral/v01/readiness",
+  "apiBasePath": "/api/ral/v01",
+  "requiredConnections": ["CobbledData"],
+  "dataAccessMode": "STORED_PROCEDURES_ONLY",
+  "tenantContextMode": "JWT_CLAIMS",
+  "databaseVariants": ["NO_RLS"]
+}
