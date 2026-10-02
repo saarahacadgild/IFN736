@@ -1,0 +1,23 @@
+{
+  "contractVersion": "1.1",
+  "moduleCode": "RAL",
+  "moduleName": "ReadAlert",
+  "version": "1.0.0",
+  "schemaPrefix": "ral",
+  "plane": "USER_APPLICATION",
+  "category": "Reading management",
+  "description": "Reader registration, authors, books, user reading lists, ISBN/title search and scan.",
+  "menuSectionCode": "APPLICATIONS",
+  "serviceManifestPath": "service/service.manifest.json",
+  "defaultRoute": "/api/ral/v01",
+  "runtimeType": "CONTAINER",
+  "logoPath": "assets/ral-logo.svg",
+  "isTenantSelectable": true,
+  "releaseStatus": "DRAFT",
+  "minimumPlatformVersion": "1.0.0",
+  "components": {
+    "frontend": { "included": false, "version": "1.0.0" },
+    "backend":  { "included": true,  "version": "1.0.0" },
+    "database": { "included": true,  "version": "1.0.0", "independentlyInstallable": false }
+  }
+}
