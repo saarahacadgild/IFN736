@@ -29,11 +29,71 @@ builder.Services.AddAuthentication("Bearer")
     });
 builder.Services.AddAuthorization();
 
+if (builder.Environment.IsDevelopment() ||
+    string.Equals(builder.Configuration["DevToken:Enabled"], "true", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddEndpointsApiExplorer();
+    builder.Services.AddSwaggerGen(c =>
+    {
+        c.SwaggerDoc("v1", new() { Title = "ReadAlert API", Version = "v1", Description = "Cobbled RAL module — Delivery 1" });
+
+        // Allow X-Dev-Token header in Swagger UI
+        c.AddSecurityDefinition("DevToken", new()
+        {
+            Name        = "X-Dev-Token",
+            Type        = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+            In          = Microsoft.OpenApi.Models.ParameterLocation.Header,
+            Description = "Local dev bypass token. Value: local-dev-secret"
+        });
+        c.AddSecurityRequirement(new()
+        {
+            {
+                new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+                {
+                    Reference = new() { Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme, Id = "DevToken" }
+                },
+                Array.Empty<string>()
+            }
+        });
+
+        // Also allow Bearer JWT for production testing
+        c.AddSecurityDefinition("Bearer", new()
+        {
+            Name         = "Authorization",
+            Type         = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+            Scheme       = "bearer",
+            BearerFormat = "JWT",
+            Description  = "Enter your JWT token (without 'Bearer ' prefix)"
+        });
+        c.AddSecurityRequirement(new()
+        {
+            {
+                new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+                {
+                    Reference = new() { Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme, Id = "Bearer" }
+                },
+                Array.Empty<string>()
+            }
+        });
+    });
+}
+
 var app = builder.Build();
 
 app.UseMiddleware<TenantContextMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
+
+if (app.Environment.IsDevelopment() ||
+    string.Equals(app.Configuration["DevToken:Enabled"], "true", StringComparison.OrdinalIgnoreCase))
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "ReadAlert API v1");
+        c.RoutePrefix = "swagger";
+    });
+}
 
 // ── Health / Readiness (unauthenticated) ─────────────────────────────────────
 
