@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>ReadAlert — standalone dev harness</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; background: #f3f7fb; }
+    h1 { color: #174c8f; }
+    #error { color: #c0392b; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <h1>ReadAlert · standalone dev harness</h1>
+  <div id="error"></div>
+  <iframe id="widget" title="ReadAlert" src="/api/ral/v01/widget"
+    style="width:100%;height:700px;border:1px solid #ccd;border-radius:8px;margin-top:12px"></iframe>
+  <script>
+    const frame = document.querySelector('#widget');
+    const errorEl = document.querySelector('#error');
+    let context = null;
+
+    async function getContext() {
+      const res = await fetch('/standalone/context', { method: 'POST' });
+      if (!res.ok) {
+        throw new Error('Standalone context failed (' + res.status + '). Is DevToken:Enabled=true in appsettings.Development.json?');
+      }
+      const body = await res.json();
+      // body.token is a real signed JWT (three dot-separated parts)
+      return {
+        contract:      'cobbled.host-context.v1',
+        moduleCode:    'RAL',
+        accessToken:   body.token,
+        permissions:   ['ral.reader.read','ral.reader.write','ral.books.read','ral.books.write'],
+        correlationID: crypto.randomUUID()
+      };
+    }
+
+    window.addEventListener('message', async event => {
+      if (event.source !== frame.contentWindow) return;
+      if (event.data?.contract !== 'cobbled.module-ready.v1') return;
+      try {
+        context ??= await getContext();
+        frame.contentWindow.postMessage(context, location.origin);
+      } catch (e) {
+        errorEl.textContent = e.message;
+      }
+    });
+  </script>
+</body>
+</html>
