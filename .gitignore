@@ -1,0 +1,73 @@
+# ── macOS ─────────────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# ── .NET / ASP.NET Core ───────────────────────────────────────────────────────
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# ── Publish output ────────────────────────────────────────────────────────────
+**/publish/
+**/PublishProfiles/
+
+# ── Secrets & local config ────────────────────────────────────────────────────
+appsettings.Development.json
+appsettings.Local.json
+appsettings.*.json
+!appsettings.json
+secrets.json
+*.pfx
+*.p12
+*.key
+.env
+.env.*
+
+# ── Rider ─────────────────────────────────────────────────────────────────────
+.idea/
+*.sln.iml
+
+# ── Visual Studio ─────────────────────────────────────────────────────────────
+.vs/
+*.rsuser
+
+# ── VS Code ───────────────────────────────────────────────────────────────────
+.vscode/
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# ── NuGet ─────────────────────────────────────────────────────────────────────
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+nuget.config.local
+
+# ── Test results ──────────────────────────────────────────────────────────────
+TestResults/
+coverage/
+*.trx
+*.coverage
+*.coveragexml
+
+# ── Dist / release packages ───────────────────────────────────────────────────
+dist/
+*.zip
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── DataProtection keys (runtime generated) ───────────────────────────────────
+DataProtection-Keys/
