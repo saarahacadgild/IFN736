@@ -1,10 +1,13 @@
 // ReadAlert Delivery 1 – Cobbled module entry point.
-// Follows Wayne's EDP reference: pure Minimal API, no MVC Controllers, no Swagger.
-// Pattern: JWT middleware -> TenantContextMiddleware -> endpoint -> Service -> Repository -> ral. stored procedures.
+// Follows Wayne's EDP reference: pure Minimal API, no MVC Controllers.
+// Pipeline: CORS → StaticFiles → DevToken bypass → TenantContextMiddleware → JWT → endpoint → Service → Repository → ral. SPs.
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using ReadAlert.Middleware;
 using ReadAlert.Repositories;
 using ReadAlert.Services;
@@ -15,93 +18,181 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IReadAlertRepository, SqlReadAlertRepository>();
 builder.Services.AddScoped<IReadAlertService, ReadAlertService>();
 
-// Dev-token bypass: in Development, if X-Dev-Token header matches config, inject synthetic claims.
-// This mirrors the EDP standalone harness pattern. Disabled outside Development automatically.
-var devTokenEnabled =
+var devTokenEnabled = builder.Environment.IsDevelopment() &&
     string.Equals(builder.Configuration["DevToken:Enabled"], "true", StringComparison.OrdinalIgnoreCase);
+
+// In Development use the local signing key; in Production use the real identity provider.
+var standaloneSigningKeyBase64 = builder.Configuration["StandaloneJwt:SigningKeyBase64"];
+var useStandaloneJwt = builder.Environment.IsDevelopment() && !string.IsNullOrWhiteSpace(standaloneSigningKeyBase64);
 
 builder.Services.AddAuthentication("Bearer")
     .AddJwtBearer("Bearer", options =>
     {
-        options.Authority = builder.Configuration["Jwt:Authority"];
-        options.Audience  = builder.Configuration["Jwt:Audience"];
-        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
+        if (useStandaloneJwt)
+        {
+            var keyBytes = Convert.FromBase64String(standaloneSigningKeyBase64!);
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey         = new SymmetricSecurityKey(keyBytes),
+                ValidateIssuer           = true,
+                ValidIssuer              = "ral-standalone",
+                ValidateAudience         = true,
+                ValidAudience            = "ral-widget",
+                ValidateLifetime         = true,
+                ClockSkew                = TimeSpan.FromSeconds(30)
+            };
+        }
+        else
+        {
+            options.Authority            = builder.Configuration["Jwt:Authority"];
+            options.Audience             = builder.Configuration["Jwt:Audience"];
+            options.RequireHttpsMetadata = true;
+        }
     });
 builder.Services.AddAuthorization();
 
-if (builder.Environment.IsDevelopment() ||
-    string.Equals(builder.Configuration["DevToken:Enabled"], "true", StringComparison.OrdinalIgnoreCase))
+builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
+    p.WithOrigins("http://localhost:5000", "http://localhost:5173")
+     .AllowAnyHeader().AllowAnyMethod()));
+
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
 {
-    builder.Services.AddEndpointsApiExplorer();
-    builder.Services.AddSwaggerGen(c =>
+    c.SwaggerDoc("v1", new OpenApiInfo
     {
-        c.SwaggerDoc("v1", new() { Title = "ReadAlert API", Version = "v1", Description = "Cobbled RAL module — Delivery 1" });
-
-        // Allow X-Dev-Token header in Swagger UI
-        c.AddSecurityDefinition("DevToken", new()
+        Title       = "ReadAlert API",
+        Version     = "v01",
+        Description = "Cobbled RAL module — Delivery 1"
+    });
+    c.AddSecurityDefinition("DevToken", new OpenApiSecurityScheme
+    {
+        Name        = "X-Dev-Token",
+        Type        = SecuritySchemeType.ApiKey,
+        In          = ParameterLocation.Header,
+        Description = "Local dev bypass header. Value: local-dev-secret"
+    });
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
         {
-            Name        = "X-Dev-Token",
-            Type        = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
-            In          = Microsoft.OpenApi.Models.ParameterLocation.Header,
-            Description = "Local dev bypass token. Value: local-dev-secret"
-        });
-        c.AddSecurityRequirement(new()
-        {
+            new OpenApiSecurityScheme
             {
-                new Microsoft.OpenApi.Models.OpenApiSecurityScheme
-                {
-                    Reference = new() { Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme, Id = "DevToken" }
-                },
-                Array.Empty<string>()
-            }
-        });
-
-        // Also allow Bearer JWT for production testing
-        c.AddSecurityDefinition("Bearer", new()
+                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "DevToken" }
+            },
+            Array.Empty<string>()
+        }
+    });
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name         = "Authorization",
+        Type         = SecuritySchemeType.Http,
+        Scheme       = "bearer",
+        BearerFormat = "JWT",
+        Description  = "Production JWT. Enter token without 'Bearer ' prefix."
+    });
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
         {
-            Name         = "Authorization",
-            Type         = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
-            Scheme       = "bearer",
-            BearerFormat = "JWT",
-            Description  = "Enter your JWT token (without 'Bearer ' prefix)"
-        });
-        c.AddSecurityRequirement(new()
-        {
+            new OpenApiSecurityScheme
             {
-                new Microsoft.OpenApi.Models.OpenApiSecurityScheme
-                {
-                    Reference = new() { Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme, Id = "Bearer" }
-                },
-                Array.Empty<string>()
-            }
-        });
+                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
+
+var app = builder.Build();
+
+app.UseCors();
+app.UseStaticFiles();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "ReadAlert API v01");
+        c.RoutePrefix = "swagger";
     });
 }
 
-var app = builder.Build();
+// Dev-token header bypass — must run BEFORE UseAuthentication
+if (devTokenEnabled)
+{
+    app.Use(async (context, next) =>
+    {
+        var token  = app.Configuration["DevToken:Token"];
+        var header = context.Request.Headers["X-Dev-Token"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(header) && header == token)
+        {
+            var tenantId = app.Configuration["DevToken:TenantID"] ?? "F115B0A094467E7FCBA8DB16DF52242E";
+            var memberId = app.Configuration["DevToken:MemberID"] ?? "00000000000000000000000000000001";
+            var claims   = new[] { new Claim("TenantID", tenantId), new Claim("MemberID", memberId) };
+            var identity = new ClaimsIdentity(claims, "DevToken");
+            context.User = new ClaimsPrincipal(identity);
+        }
+        await next();
+    });
+}
 
 app.UseMiddleware<TenantContextMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 
-if (app.Environment.IsDevelopment() ||
-    string.Equals(app.Configuration["DevToken:Enabled"], "true", StringComparison.OrdinalIgnoreCase))
-{
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "ReadAlert API v1");
-        c.RoutePrefix = "swagger";
-    });
-}
-
-// ── Health / Readiness (unauthenticated) ─────────────────────────────────────
-
+// ── Health / Readiness ────────────────────────────────────────────────────────
 app.MapGet("/api/ral/v01/health",    () => Results.Ok(new { service = "ReadAlert", version = "1.0.0", status = "healthy" }));
 app.MapGet("/api/ral/v01/readiness", () => Results.Ok(new { service = "ReadAlert", version = "1.0.0", status = "ready"   }));
 
-// ── Reader Profile ────────────────────────────────────────────────────────────
+// ── Standalone dev harness ────────────────────────────────────────────────────
 
+// Serves wwwroot/standalone.html
+app.MapGet("/standalone", (IWebHostEnvironment env) =>
+    devTokenEnabled
+        ? Results.File(Path.Combine(env.WebRootPath, "standalone.html"), "text/html")
+        : Results.NotFound());
+
+// Serves wwwroot/ral-widget/index.html inside the iframe
+app.MapGet("/api/ral/v01/widget", (IWebHostEnvironment env) =>
+    Results.File(Path.Combine(env.WebRootPath, "ral-widget", "index.html"), "text/html; charset=utf-8"));
+
+// Mints a REAL signed JWT — three dot-separated parts — for the widget iframe.
+// The widget sends it as: Authorization: Bearer <token>
+app.MapPost("/standalone/context", () =>
+{
+    if (!devTokenEnabled) return Results.NotFound();
+
+    var tenantId = app.Configuration["DevToken:TenantID"] ?? "F115B0A094467E7FCBA8DB16DF52242E";
+    var memberId = app.Configuration["DevToken:MemberID"] ?? "00000000000000000000000000000001";
+
+    // Same key used in StandaloneJwt:SigningKeyBase64 / TokenValidationParameters above
+    const string signingKey = "cmVhZGFsZXJ0LWRldi1zaWduaW5nLWtleS0yMDI2LWxvY2Fs";
+    var keyBytes    = Convert.FromBase64String(signingKey);
+    var securityKey = new SymmetricSecurityKey(keyBytes);
+    var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+
+    var now = DateTime.UtcNow;
+    var jwtToken = new JwtSecurityToken(
+        issuer:   "ral-standalone",
+        audience: "ral-widget",
+        claims: new[]
+        {
+            new Claim("TenantID",    tenantId),
+            new Claim("MemberID",    memberId),
+            new Claim("permissions", "ral.reader.read"),
+            new Claim("permissions", "ral.reader.write"),
+            new Claim("permissions", "ral.books.read"),
+            new Claim("permissions", "ral.books.write"),
+        },
+        notBefore: now,
+        expires:   now.AddHours(2),
+        signingCredentials: credentials);
+
+    var token = new JwtSecurityTokenHandler().WriteToken(jwtToken);
+    return Results.Ok(new { token });
+});
+
+// ── Reader Profile ────────────────────────────────────────────────────────────
 app.MapGet("/api/ral/v01/reader-profile", async (IReadAlertService svc, CancellationToken ct) =>
 {
     var result = await svc.CrudAsync("ral_ReaderProfile_CRUD_JSON", "SELECT", "{}", ct);
@@ -123,7 +214,6 @@ app.MapPut("/api/ral/v01/reader-profile", async (HttpRequest req, IReadAlertServ
 }).RequireAuthorization();
 
 // ── Authors ───────────────────────────────────────────────────────────────────
-
 app.MapGet("/api/ral/v01/authors", async (string? searchText, IReadAlertService svc, CancellationToken ct) =>
 {
     var payload = searchText is null ? "{}" : JsonSerializer.Serialize(new { SearchText = searchText });
@@ -160,7 +250,6 @@ app.MapDelete("/api/ral/v01/authors/{authorId}", async (string authorId, IReadAl
 }).RequireAuthorization();
 
 // ── Books ─────────────────────────────────────────────────────────────────────
-
 app.MapGet("/api/ral/v01/books", async (string? searchText, IReadAlertService svc, CancellationToken ct) =>
 {
     var payload = searchText is null ? "{}" : JsonSerializer.Serialize(new { SearchText = searchText });
@@ -175,7 +264,6 @@ app.MapPost("/api/ral/v01/books", async (HttpRequest req, IReadAlertService svc,
     return Json(result, 201);
 }).RequireAuthorization();
 
-// Book Lookup – the two SP-dedicated endpoints (your task focus)
 app.MapPost("/api/ral/v01/books/search", async (HttpRequest req, IReadAlertService svc, CancellationToken ct) =>
 {
     var payload = await ReadBodyAsync(req);
@@ -205,7 +293,6 @@ app.MapPut("/api/ral/v01/books/{bookId}", async (string bookId, HttpRequest req,
 }).RequireAuthorization();
 
 // ── User Books ────────────────────────────────────────────────────────────────
-
 app.MapGet("/api/ral/v01/user-books", async (IReadAlertService svc, CancellationToken ct) =>
 {
     var result = await svc.CrudAsync("ral_UserBooks_CRUD_JSON", "SELECT", "{}", ct);
@@ -236,7 +323,6 @@ app.MapDelete("/api/ral/v01/user-books/{userBookId}", async (string userBookId, 
 app.Run();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
 static async Task<string> ReadBodyAsync(HttpRequest req)
 {
     using var reader = new StreamReader(req.Body, Encoding.UTF8);
@@ -244,7 +330,6 @@ static async Task<string> ReadBodyAsync(HttpRequest req)
     return string.IsNullOrWhiteSpace(body) ? "{}" : body;
 }
 
-// Merges a route ID into an existing JSON payload so the stored procedure receives it.
 static string MergeId(string json, string key, string value)
 {
     try
