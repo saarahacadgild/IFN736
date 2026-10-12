@@ -1,16 +1,23 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
+
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>ReadAlert</RootNamespace>
-    <AssemblyName>ReadAlert.Api</AssemblyName>
-    <UserSecretsId>readalert-delivery1-dev</UserSecretsId>
   </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.1" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
-    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
-  </ItemGroup>
-</Project>
 
+ <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi"          Version="8.0.27" />
+    <PackageReference Include="Microsoft.Data.SqlClient"              Version="7.0.2" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.16.0" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt"       Version="8.16.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore"                Version="6.6.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="wwwroot\app.js" />
+    <None Include="wwwroot\index.html" />
+    <None Include="wwwroot\styles.css" />
+  </ItemGroup>
+
+</Project>
